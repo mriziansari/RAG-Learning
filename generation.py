@@ -2,7 +2,8 @@ import os
 from google.genai import Client
 from google.genai.types import GenerateContentConfig
 import dotenv
-from retriever import Retriever
+from retriever import Retriever, Reranker
+
 dotenv.load_dotenv()
 
 class ResponseGenerator:
@@ -15,7 +16,7 @@ class ResponseGenerator:
         if not retrieved_chunks:
             return "No relevant context found to answer the query."
 
-        context_text = "\n\n".join(retrieved_chunks)
+        context_text = "\n\n".join([chunk["text"] for chunk in retrieved_chunks])
         
         SYSTEM_PROMPT = """You are an Expert Knowledge Assistant. Your goal is to provide accurate, helpful answers based STRICTLY on the provided context.
 
@@ -55,20 +56,25 @@ class ResponseGenerator:
 def main():
     # query_text = "By how many tons per capita must the urban carbon footprint drop to meet the 2035 target from the 2024 baseline?"
     # query_text = "How does the 'Right to Shade' regulation in Phoenix potentially impact the temperature of neighboring buildings?"
-    query_text = "Identify the transit mode that is the most energy-efficient according to Table 1 and explain its fire rating if mentioned?"
+    # query_text = "Identify the transit mode that is the most energy-efficient according to Table 1 and explain its fire rating if mentioned?"
     # query_text = "The report mentions that Autonomous Vehicles eliminate traffic jams. Is this consistent with the findings in San Francisco?"
-    # query_text = "What is the specific initial cost barrier mentioned for Kinetic Pavements, and which city conducted the pilot study?"
+    query_text = "What is the specific initial cost barrier mentioned for Kinetic Pavements, and which city conducted the pilot study?"
     
     # 1. Retrieve the best section (Level 1)
     retriever = Retriever()
+    reranker = Reranker()
+    query_embedding = retriever.query_embedding(query_text)
     relevant_section_id = retriever.recursive_retrieve(query_text,n_results=5)
     
     # 2. Retrieve all chunks from the best section (Level 2)
     retrieved_chunks = retriever.retrieve_context(query_text, section_id=relevant_section_id, n_results=5)
     
-    # 3. Generate Response
+    # 3. Stage 1: Rerank retrieved chunks
+    reranked_chunks = reranker.stage1_reranking(query_text, query_embedding, retrieved_chunks)
+    
+    # 4. Generate Response
     response_generator = ResponseGenerator()
-    response = response_generator.generate_response(query_text, retrieved_chunks)
+    response = response_generator.generate_response(query_text, reranked_chunks)
     
     print("-" * 100)
     print("Response:")
