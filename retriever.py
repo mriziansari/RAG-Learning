@@ -1,5 +1,5 @@
 import chromadb
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 import numpy as np
 import re   
 
@@ -111,8 +111,12 @@ class Retriever:
         
    
 class Reranker:
-    def __init__(self, query_embedder: QueryEmbedder):
+    def __init__(self, query_embedder: QueryEmbedder, model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
         self.query_embedder = query_embedder
+
+        # this model will be used for stage two reranking. It is slow but more accurate so we use it for top_n chunks from stage 1
+        self.cross_encoder = CrossEncoder(model_name)
+
     def cosine_similarity(self, a, b):
         # Compute cosine similarity between two vectors.
         # Dot product divided by product of norms returns similarity score between -1 and 1.
@@ -148,6 +152,9 @@ class Reranker:
         return 1.0
 
     def stage1_reranking(self, query_text: str, retrieved_chunks: list, top_n: int = 5) -> list:
+        """
+        Stage 1: Rerank retrieved chunks for stage 1.
+        """
         scored_chunks = []
         query_embedding = self.query_embedder.embed_query(query_text)
         for chunk in retrieved_chunks:
@@ -172,6 +179,31 @@ class Reranker:
         
         scored_chunks.sort(key=lambda x: x["final_score"], reverse=True)
         return scored_chunks[:top_n]    
+        
+    def stage2_reranking(self, query_text, stage1_reranked_chunks, top_n: int = 3):
+        """
+        Stage 2: Rerank retrieved chunks for stage 2.
+        args:
+            query_text: The query text.
+            stage1_reranked_chunks: The chunks reranked by stage 1.
+            top_n: The number of chunks to return.
+        """
+
+        pairs = [
+            (query_text, chunk["text"]) 
+            for chunk in stage1_reranked_chunks
+            ]
+
+        scores = self.cross_encoder.predict(pairs)
+        
+        for i, score in enumerate(scores):
+            stage1_reranked_chunks[i]["cross_encoder_score"] = float(score)
+        
+        stage1_reranked_chunks.sort(
+            key=lambda x: x["cross_encoder_score"],
+            reverse=True
+            )
+        return stage1_reranked_chunks[:top_n]
         
 
 def main():

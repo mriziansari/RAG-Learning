@@ -71,11 +71,19 @@ def main():
     
     # 3. Stage 1: Rerank retrieved chunks
     reranked_chunks = reranker.stage1_reranking(query_text, retrieved_chunks)
-    
-    # 4. Generate Response
+    # 4. Stage 2: Rerank retrieved chunks
+    reranked_chunks = reranker.stage2_reranking(query_text, reranked_chunks)
+    # 5. Generate Response
     response_generator = ResponseGenerator()
     response = response_generator.generate_response(query_text, reranked_chunks)
     
+    print("-" * 100)
+    print("Stage 1 Reranked Chunks:")
+    for chunk in reranked_chunks:
+        print("*" * 100)
+        print("stage1_score: ",chunk["final_score"])
+        print("cross_encoder_score: ",chunk["cross_encoder_score"])
+        print("text: ",chunk["text"][:120])
     print("-" * 100)
     print("Response:")
     print(response)
