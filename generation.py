@@ -2,7 +2,7 @@ import os
 from google.genai import Client
 from google.genai.types import GenerateContentConfig
 import dotenv
-from retriever import Retriever, Reranker
+from retriever import Retriever, Reranker, QueryEmbedder
 
 dotenv.load_dotenv()
 
@@ -61,16 +61,16 @@ def main():
     query_text = "What is the specific initial cost barrier mentioned for Kinetic Pavements, and which city conducted the pilot study?"
     
     # 1. Retrieve the best section (Level 1)
-    retriever = Retriever()
-    reranker = Reranker()
-    query_embedding = retriever.query_embedding(query_text)
+    query_embedder = QueryEmbedder()
+    retriever = Retriever(query_embedder)
+    reranker = Reranker(query_embedder)
     relevant_section_id = retriever.recursive_retrieve(query_text,n_results=5)
     
     # 2. Retrieve all chunks from the best section (Level 2)
     retrieved_chunks = retriever.retrieve_context(query_text, section_id=relevant_section_id, n_results=5)
     
     # 3. Stage 1: Rerank retrieved chunks
-    reranked_chunks = reranker.stage1_reranking(query_text, query_embedding, retrieved_chunks)
+    reranked_chunks = reranker.stage1_reranking(query_text, retrieved_chunks)
     
     # 4. Generate Response
     response_generator = ResponseGenerator()

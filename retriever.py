@@ -3,14 +3,21 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 import re   
 
-class Retriever:
-    def __init__(self):
-        self.client = chromadb.PersistentClient(path="data/urban_infrastructure")
-        self.model = SentenceTransformer("all-mpnet-base-v2")
+class QueryEmbedder:
+    def __init__(self, model_name: str = "all-mpnet-base-v2"):
+        self.model = SentenceTransformer(model_name)
+    
+    def embed_query(self, query_text: str) -> np.ndarray:
+        return self.model.encode(
+            [query_text],
+            normalize_embeddings=True,
+            convert_to_numpy=True
+            )[0]
 
-    def query_embedding(self, query_text: str) -> list:
-        # Generate embedding for the query
-        return self.model.encode([query_text]).tolist()
+class Retriever:
+    def __init__(self, query_embedder: QueryEmbedder):
+        self.client = chromadb.PersistentClient(path="data/urban_infrastructure")
+        self.query_embedder = query_embedder
 
     def recursive_retrieve(self, query_text: str, n_results: int = 5) -> list:
         """ 
@@ -21,7 +28,7 @@ class Retriever:
             collection = self.client.get_collection("router_collection")
             
             # Generate embedding for the query
-            query_embedding = self.query_embedding(query_text)
+            query_embedding = self.query_embedder.embed_query(query_text)
 
             # Query for Level 1 chunks (Sections)
             result = collection.query(
@@ -51,16 +58,18 @@ class Retriever:
             print(f"Error accessing ChromaDB (Level 1): {e}")
             return []
 
-    def retrieve_context(self, query_text: str, section_id: list = [], n_results: int = 5) -> list:
+    def retrieve_context(self, query_text: str, section_id=None, n_results: int = 5) -> list:
         """
         Retrieve relevant Details (Level 2) from ChromaDB.
         If section_id is provided, filter by that parent_section.
         """
+        if section_id is None:
+            section_id = []
         try:
             collection = self.client.get_collection("answer_collection")
             
             # Generate embedding for the query
-            query_embedding = self.query_embedding(query_text)
+            query_embedding = self.query_embedder.embed_query(query_text)
 
             filters = [{"level": 2}]
             if section_id and len(section_id) > 0:
@@ -102,8 +111,8 @@ class Retriever:
         
    
 class Reranker:
-    def __init__(self):
-        pass
+    def __init__(self, query_embedder: QueryEmbedder):
+        self.query_embedder = query_embedder
     def cosine_similarity(self, a, b):
         # Compute cosine similarity between two vectors.
         # Dot product divided by product of norms returns similarity score between -1 and 1.
@@ -138,10 +147,12 @@ class Reranker:
         # In sweet spot → full score
         return 1.0
 
-    def stage1_reranking(self, query_text: str, query_embedding: list, retrieved_chunks: list, top_n: int = 5) -> list:
+    def stage1_reranking(self, query_text: str, retrieved_chunks: list, top_n: int = 5) -> list:
         scored_chunks = []
+        query_embedding = self.query_embedder.embed_query(query_text)
         for chunk in retrieved_chunks:
-            sim = self.cosine_similarity(query_embedding, chunk["embedding"])
+            chunk_embedding = np.array(chunk["embedding"])
+            sim = self.cosine_similarity(query_embedding, chunk_embedding)
             overlap = self.keyword_overlap_score(query_text, chunk["text"])
             quality = self.chunk_quality_score(chunk["text"])
             
@@ -164,8 +175,9 @@ class Reranker:
         
 
 def main():
-    retriever = Retriever()
-    reranker = Reranker()
+    query_embedder = QueryEmbedder()
+    retriever = Retriever(query_embedder)
+    reranker = Reranker(query_embedder)
     
     # query_text = "By how many tons per capita must the urban carbon footprint drop to meet the 2035 target from the 2024 baseline?"
     # query_text = "How does the 'Right to Shade' regulation in Phoenix potentially impact the temperature of neighboring buildings?"
@@ -186,7 +198,7 @@ def main():
 
     if retrieved_context:
         # 3. Stage 1: Rerank retrieved chunks
-        reranked_chunks = reranker.stage1_reranking(query_text, retriever.query_embedding(query_text), retrieved_context)
+        reranked_chunks = reranker.stage1_reranking(query_text, retrieved_context)
         
         # 4. Print results
         for i, chunk in enumerate(reranked_chunks):
