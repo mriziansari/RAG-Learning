@@ -51,7 +51,6 @@ class Retriever:
                     metadata.get("section_id")
                     for metadata in result["metadatas"][0]
                 ]
-                print(f"Identify most relevant section: {', '.join(section_ids)}")
                 return section_ids
             return []
             

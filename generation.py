@@ -7,8 +7,9 @@ from retriever import Retriever, Reranker, QueryEmbedder
 dotenv.load_dotenv()
 
 class ResponseGenerator:
-    def __init__(self, client: Client):
+    def __init__(self, client: Client, model_name: str):
         self.gclient = client
+        self.model = model_name
         
     def generate_response(self, query_text: str, retrieved_chunks: list) -> str:
         """Generates a response using the LLM and retrieved context."""
@@ -45,7 +46,7 @@ class ResponseGenerator:
         )
         try:
             response = self.gclient.models.generate_content(
-                model="gemini-2.5-flash",
+                model=self.model,
                 config=config,
                 contents=USER_PROMPT,
             )
