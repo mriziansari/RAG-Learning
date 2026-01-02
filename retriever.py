@@ -2,6 +2,7 @@ import chromadb
 from sentence_transformers import SentenceTransformer, CrossEncoder
 import numpy as np
 import re   
+from query_expander import QueryExpander
 
 class QueryEmbedder:
     def __init__(self, model_name: str = "all-mpnet-base-v2"):
@@ -15,11 +16,11 @@ class QueryEmbedder:
             )[0]
 
 class Retriever:
-    def __init__(self, query_embedder: QueryEmbedder):
+    def __init__(self):
         self.client = chromadb.PersistentClient(path="data/urban_infrastructure")
-        self.query_embedder = query_embedder
+        self.query_embedder = QueryEmbedder()
 
-    def recursive_retrieve(self, query_text: str, n_results: int = 5) -> list:
+    def recursive_retrieve(self, query_text: list, n_results: int = 5) -> list:
         """ 
         Retrieve the most relevant Section (Level 1) from ChromaDB.
         Returns the 'section' ID (e.g. 'section_5').
@@ -95,11 +96,11 @@ class Retriever:
                     }
                 )
 
-            print(f"Retrieved {len(result['documents'][0])} chunks")
-            for i, doc in enumerate(result['documents'][0]):
-                print("-" * 100)
-                print(f"chunk_{i}")
-                print(doc)
+            # print(f"Retrieved {len(result['documents'][0])} chunks")
+            # for i, doc in enumerate(result['documents'][0]):
+            #     print("-" * 100)
+            #     print(f"chunk_{i}")
+            #     print(doc)
             
             if result["documents"] and result["documents"][0]:
                 return retrived_chunks
@@ -109,10 +110,40 @@ class Retriever:
             print(f"Error accessing ChromaDB (Level 2): {e}")
             return []
         
-   
+    def retrive_chunks(self, extended_queries: list):
+        """
+        Retrieve chunks for each query and merge them.
+        args:
+            extended_queries: list of extended queries retrived from expand_query function in query_expander.py
+        """
+        all_chunks = []
+        for query in extended_queries:
+           section_ids = self.recursive_retrieve(query)
+           chunks = self.retrieve_context(query, section_ids)
+           for c in chunks:
+               c["source_query"] = query
+           all_chunks.extend(chunks)
+        
+        merged_chunks = self.deduplicate(all_chunks)
+        return merged_chunks
+
+    def deduplicate(self, chunks):
+        """
+        Deduplicate chunks based on chunk_id and distance.
+        args:
+            chunks: list of chunks retrived from retrieve_context function
+        """
+        seen = {}
+        for i, c in enumerate(chunks):
+            key = f"{c['metadata']['doc_id']}_{c['metadata']['chunk_index']}"
+            if key not in seen or c["distance"] < seen[key]["distance"]:
+                seen[key] = c
+        return list(seen.values())
+        
+        
 class Reranker:
-    def __init__(self, query_embedder: QueryEmbedder, model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
-        self.query_embedder = query_embedder
+    def __init__(self, model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"):
+        self.query_embedder = QueryEmbedder()
 
         # this model will be used for stage two reranking. It is slow but more accurate so we use it for top_n chunks from stage 1
         self.cross_encoder = CrossEncoder(model_name)
@@ -205,38 +236,3 @@ class Reranker:
             )
         return stage1_reranked_chunks[:top_n]
         
-
-def main():
-    query_embedder = QueryEmbedder()
-    retriever = Retriever(query_embedder)
-    reranker = Reranker(query_embedder)
-    
-    # query_text = "By how many tons per capita must the urban carbon footprint drop to meet the 2035 target from the 2024 baseline?"
-    # query_text = "How does the 'Right to Shade' regulation in Phoenix potentially impact the temperature of neighboring buildings?"
-    # query_text = "Identify the transit mode that is the most energy-efficient according to Table 1 and explain its fire rating if mentioned?"
-    query_text = "The report mentions that Autonomous Vehicles eliminate traffic jams. Is this consistent with the findings in San Francisco?"
-    # query_text = "What is the specific initial cost barrier mentioned for Kinetic Pavements, and which city conducted the pilot study?"
-    
-    # 1. Retrieve the best section (Level 1)
-    relevant_section_id = retriever.recursive_retrieve(query_text, n_results=5)
-    
-    if relevant_section_id:
-        # 2. Retrieve specific chunks within that section (Level 2)
-        retrieved_context = retriever.retrieve_context(query_text, section_id=relevant_section_id, n_results=5)
-    else:
-        # Fallback: Searching all Level 2 chunks if no section found (optional, but good for robustness)
-        print("No specific section matched. Searching all details...")
-        retrieved_context = retriever.retrieve_context(query_text, section_id=None)
-
-    if retrieved_context:
-        # 3. Stage 1: Rerank retrieved chunks
-        reranked_chunks = reranker.stage1_reranking(query_text, retrieved_context)
-        
-        # 4. Print results
-        for i, chunk in enumerate(reranked_chunks):
-            print(f"\nChunk {i+1} (Score: {chunk['final_score']})")
-            print(chunk['text'])
-            print("-" * 100)
-
-if __name__ == "__main__":
-    main()

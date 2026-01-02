@@ -1,8 +1,6 @@
 import numpy as np
-import uuid
 import chromadb
 from sentence_transformers import SentenceTransformer
-from chromadb.utils import embedding_functions
 
 from create_documents import DocumentCreator
 from hierarchical_chuking import HierarchicalChunker
@@ -29,13 +27,16 @@ class EmbeddingManager:
       try:
         if not self.model:
           raise Exception("Model not loaded. Please load the model first.") 
+        
         print(f"Generating embedding for {len(texts)} texts")
         print("-" * 100)
+
         genrated_embeddings = self.model.encode(texts,
          show_progress_bar=True,
          convert_to_numpy=True,
          normalize_embeddings=True
          )
+         
         print(f"Generated embedding for {len(texts)} texts with shape {genrated_embeddings.shape}")
         print("-" * 100)
         return genrated_embeddings
@@ -72,7 +73,7 @@ class VectorStoreManager:
       print(f"Successfully added {len(chunks)} chunks to the collection {collection_name}")
 
     except Exception as e:
-      raise Exception(f"Failed to add chunks to the collection {name}: {e}")
+      raise Exception(f"Failed to add chunks to the collection {collection_name}: {e}")
 
 def main():
   doc_path = "urban_infrastrucher.pdf"
