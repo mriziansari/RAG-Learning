@@ -7,7 +7,8 @@ from retriever import Retriever, Reranker, QueryEmbedder
 from generation import ResponseGenerator
 from tool_registry import ToolRegistry
 from executor import Executor
-
+from reasoning_executor import ReasoningExecutor
+from reasoning_planner import ReasoningPlanner
 
 load_dotenv()
 if __name__ == "__main__":
@@ -16,23 +17,27 @@ if __name__ == "__main__":
 
     
 
-    # query_text = "By how many tons per capita must the urban carbon footprint drop to meet the 2035 target from the 2024 baseline?"
+    query_text = "By how many tons per capita must the urban carbon footprint drop to meet the 2035 target from the 2024 baseline?"
     # query_text = "How does the 'Right to Shade' regulation in Phoenix potentially impact the temperature of neighboring buildings?"
     # query_text = "Identify the transit mode that is the most energy-efficient according to Table 1 and explain its fire rating if mentioned?"
     # query_text = "The report mentions that Autonomous Vehicles eliminate traffic jams. Is this consistent with the findings in San Francisco?"
-    query_text = "What is the specific initial cost barrier mentioned for Kinetic Pavements, and which city conducted the pilot study?"
+    # query_text = "What is the specific initial cost barrier mentioned for Kinetic Pavements, and which city conducted the pilot study?"
 
-    planner = Planner(gclient, model_name)
-    plan = planner.plan(query_text)
+    # planner = Planner(gclient, model_name)
+    # plan = planner.plan(query_text)
 
+    reasoning_planner = ReasoningPlanner(gclient, model_name)
     query_expander = QueryExpander(gclient, model_name)
     retriever = Retriever()
     reranker = Reranker()
     response_generator = ResponseGenerator(gclient, model_name)
    
     tool_registry = ToolRegistry(query_expander, retriever, reranker, response_generator)
-    executor = Executor(tool_registry)
-    answer = executor.run(plan, query_text)
+
+    reasoning_executor = ReasoningExecutor(reasoning_planner, tool_registry)
+    answer = reasoning_executor.run(query_text)
+    # executor = Executor(tool_registry)
+    # answer = executor.run(plan, query_text)
     print(f"\n\nQuery: {query_text}")
     print(f"\nAnswer: {answer}\n")
     
