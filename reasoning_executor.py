@@ -1,8 +1,10 @@
+
 class ReasoningExecutor:
-    def __init__(self,planner, tool_registry, max_steps: int = 3):
+    def __init__(self,planner, tool_registry,memory_store, max_steps: int = 3):
         self.tools = tool_registry
         self.planner = planner
         self.max_steps = max_steps
+        self.memory_store = memory_store
         # Tool limits
         self.max_retrieve = 2
         self.max_rerank = 1
@@ -14,9 +16,11 @@ class ReasoningExecutor:
         """
         state = {
             "user_query": user_query,
+            "memories": None,
             "expanded_queries": None,
             "retrieved_chunks": None,
             "reranked_chunks": None,
+            "answer_source": None,
             "answer": None,
             "observations": [],
             "tool_calls": {
@@ -26,8 +30,17 @@ class ReasoningExecutor:
             }
         }
 
+        # Memory retrieval
+        print("\n<<<<<<<<<<<<<<Memory retrieval>>>>>>>>>>>>>>")
+        memories = self.memory_store.retrieve(user_query)
+        if memories:
+            state["memories"] = memories
+        print("Memory summary:", state["memories"])
+        print(">>>>>>>>>>>>>>Memory retrieval<<<<<<<<<<<<<<<\n")
+
         for step in range(self.max_steps):
-            action = self.planner.next_action(state)
+            print(f">>> LOOP STEP {step} <<<")
+            action = self.planner.next_action(state)    
             
             tool = action["tool"]
             args = action.get("args", {})
@@ -57,10 +70,20 @@ class ReasoningExecutor:
                     f"Reranked {len(state['reranked_chunks'])} chunks"
                 )
             elif tool == "answer":
+                source = args.get("source", "rag")
+
+                valid_memories = [m for m in memories if m["score"] >= 0.60]
+
+                if source == "memory" and not valid_memories:
+                    source = "rag"
+                print("\n<<<<<<<<<+++++Source in answer tool+++++>>>>>>>\n", source)
+                state["memories"] = valid_memories
+                state["answer_source"] = source
                 state["tool_calls"]["answer"] += 1
-                self.tools.answer(state)
-                print("Answerer is executed")
-                return state["answer"]
+
+                answer = self.tools.answer(state)
+                print("Answerer executed via:", source)
+                return answer
 
             elif tool == "stop":
                 return "Unable to answer with available information"

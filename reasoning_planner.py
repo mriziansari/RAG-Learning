@@ -2,6 +2,7 @@ import json
 from google.genai.types import GenerateContentConfig
 
 
+
 class ReasoningPlanner:
     """
     Decides the NEXT action for an Agentic RAG system
@@ -23,11 +24,19 @@ class ReasoningPlanner:
         retrieved_chunks = state.get("retrieved_chunks") or []
         reranked_chunks = state.get("reranked_chunks") or []
         observations = state.get("observations") or []
+        memories = state.get("memories") or []
+        if memories:
+            memory_summary = "\n".join([m["content"] for m in memories])
+        else:
+            memory_summary = "None"
+        print("memory_summary in planner", memory_summary)
 
         num_retrieved = len(retrieved_chunks)
         num_reranked = len(reranked_chunks)
         observation_text = "\n".join(observations) if observations else "None"
 
+        # --- Memory Summaries ---
+        
         # --- System Prompt ---
         REASONING_PLANNER_PROMPT = """You are the Reasoning Engine of an Agentic RAG system.
 
@@ -49,6 +58,11 @@ AVAILABLE TOOLS:
    Use this if multiple attempts failed or the query cannot be answered.
 
 DECISION RULES:
+- Memory Rule: 
+    - If memory clearly contains the answer, and you find it to be eough to aswer the query then go to answer and add args -> "source": "memory" other else "source": "rag"
+    - if there is no need to retrieve or rerank to then dont retrieve or rerank, go to answer. Otherwise, go to retrieve.
+ (if {memory_summary} is empety then skip this "Memory Rule:" rule)
+    
 - If no chunks are retrieved → retrieve (user_query_expansion: true)
 - If chunks exist but are unordered or noisy → rerank
 - If reranked chunks clearly contain the answer → answer
@@ -69,6 +83,8 @@ Do NOT use markdown.
         user_prompt = f"""
 USER QUERY:
 {user_query}
+PAST MEMORIES:
+{memory_summary}
 
 CURRENT STATE:
 - Retrieved Chunks: {num_retrieved}
